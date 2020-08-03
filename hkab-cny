@@ -1,0 +1,152 @@
+# -*- coding:utf-8 -*-
+
+'''
+---Peggy.H---
+
+This file is for retrieving member banks exchange rates of "CNY, onshore exchange rates" from the Hong Kong Association of Banks.
+***Source page: https://www.hkab.org.hk/ExchangeRateDisplayAction.do
+***Data only available in the working days of Hong Kong, including Saturday.
+Input: date of start and end: start_date, end_date; 
+       format: yyyy-m-d, do not input "0"
+Output: CNY, onshore exchange rates: selling, buying_dd, buying_T/T
+'''
+
+import requests
+import datetime
+from datetime import date, timedelta
+import time
+import urllib.request
+import urllib.parse
+from lxml import etree
+import pandas as pd
+import matplotlib.pyplot as plt
+
+#input
+dir = os.path.split(os.path.realpath("hkab"))[0].replace("\\","/")
+start_date = date(2019, 7, 1)
+end_date = date(2020, 7, 22)
+
+
+fs_earch_url = 'https://www.hkab.org.hk/ExchangeRateDisplayAction.do'
+headers = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+    'Accpet-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'zh-HK,zh-CN;q=0.9,zh;q=0.8,en;q=0.7',
+    'Cache-Control': 'max-age=0',
+    'Cookie': 'JSESSIONID=188E32A61F7E90EBCA010B00AC600C4A',
+    'Host': 'www.hkab.org.hk',
+    'Upgrade-Insecure-Requests': '1',
+
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
+    'Connection': 'keep-alive',
+    'Referer': 'https://www.google.com/',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'cross-site',
+    'Sec-Fetch-User': '?1'}
+resp = requests.get(fs_earch_url, headers=headers)
+# print(resp.text)
+
+
+date_range = [date.fromordinal(i) for i in range(start_date.toordinal(), end_date.toordinal())]
+date_list = []
+for i in date_range:
+    date_list.append(str(i))
+# print(date_list)
+
+
+CNY_date_list = []
+CNY_selling_list = []
+CNY_buyingtt_list = []
+CNY_buyingdd_list = []
+for date in date_list:
+    year = date[:4]
+    month = date[5:7] 
+    if date[-2] == str(0):
+        day = date[-1]
+    else: day = date[-2:]
+    print('input date: ', year, month, day)
+
+    
+    
+    fs_earch_values = {
+        'name': 'ExchangeRateDisplayForm',
+        'method': 'post',
+        # 'action': '/ExchangeRateDisplayAction.do',
+        'rateYear': str(year),
+        'rateMonth': str(month),
+        'rateDay': str(day)
+    }
+    
+    
+    data = urllib.parse.urlencode(fs_earch_values)
+    req = urllib.request.Request(fs_earch_url, data.encode('utf-8'), headers)
+    response = urllib.request.urlopen(req, timeout=60)
+    the_page = response.read().decode('utf-8')
+    # print(the_page)
+
+    tree = etree.HTML(the_page)
+    table = tree.xpath('//table')
+    
+    
+    for i in table:
+        j = ''.join(i.xpath(".//td[1]//text()"))
+        # print('-----------------------------------------------------\n', 
+        #       table.index(i), j)
+        
+    exr_table = table[12]
+    exr_content = ''.join(exr_table.xpath(".//td[1]//text()")).split()
+    # print(exr_content)
+
+    if 'CNY' in exr_content:
+        find_rmb_index = exr_content.index('CNY')
+        # print(find_rmb_index)
+        CNY_selling = exr_content[int(find_rmb_index+6)]
+        CNY_buyingtt = exr_content[int(find_rmb_index+7)]
+        CNY_buyingdd = exr_content[int(find_rmb_index+8)]
+        CNY_date_list.append(date)
+        CNY_selling_list.append(CNY_selling)
+        CNY_buyingtt_list.append(CNY_buyingtt)
+        CNY_buyingdd_list.append(CNY_buyingdd)
+        # print('CNY_selling ', CNY_selling, '\n',
+        #       'CNY_buyingtt ', CNY_buyingtt, '\n',
+        #       'CNY_buyingdd ', CNY_buyingdd)
+        
+    else:
+        CNY_date_list.append(date)
+        CNY_selling_list.append('n.a.')
+        CNY_buyingtt_list.append('n.a.')
+        CNY_buyingdd_list.append('n.a.')
+
+
+df_CNY = pd.DataFrame(CNY_selling_list, columns=['CNY_selling'], index=CNY_date_list)
+df_CNY['CNY_selling'] = pd.to_numeric(df_CNY['CNY_selling'], errors='coerce')
+df_CNY['CNY_buyingtt'] = CNY_buyingtt_list
+df_CNY['CNY_buyingtt'] = pd.to_numeric(df_CNY['CNY_buyingtt'], errors='coerce')
+df_CNY['CNY_buyingdd'] = CNY_buyingdd_list
+df_CNY['CNY_buyingdd'] = pd.to_numeric(df_CNY['CNY_buyingdd'], errors='coerce')
+
+
+df_CNY['CNY_agg'] = (df_CNY['CNY_selling']+df_CNY['CNY_buyingtt'])/2
+
+df_CNY.plot()
+plt.show()
+print(df_CNY)
+
+df_CNY.to_excel(dir+'CNY'+str(start_date)+'to'+str(end_date)+'.xlsx', sheet_name='CNY', engine='xlsxwriter')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
