@@ -1,0 +1,177 @@
+# -*- coding:utf-8 -*-
+
+'''
+---Peggy.H---
+
+This file is for retrieving member banks exchange rates from the Hong Kong Association of Banks.
+***Source page: https://www.hkab.org.hk/ExchangeRateDisplayAction.do
+***Table: Hong Kong Dollars to 100 units of Foreign Currency
+***Data only available in the working days of Hong Kong, including Saturday.
+Input: 1) date of start and end: start_date, end_date;
+        ***format: yyyy-m-d, do not input "0".
+       2) (optional) currency dict: choose the interested currency; by default, all the currency listed in the source will be taken;
+Output: an excel file stored all the results.
+'''
+
+import requests
+import os
+import datetime
+from datetime import date, timedelta
+import time
+import urllib.request
+import urllib.parse
+from lxml import etree
+import matplotlib.pyplot as plt
+import pandas as pd
+
+
+start_date = date(2020, 1, 1)
+end_date = date(2020, 8, 7)
+
+currency_dict = {
+    'AUD': 3,
+    'BND': 3,
+    'CAD': 3,
+    'CHF': 3,
+    'DKK': 3,
+    'EUR': 2,
+    'INR': 3,
+    'JPY': 3,
+    'MYR': 3,
+    'NOK': 3,
+    'NTD': 4,
+    'NZD': 4,
+    'PHP': 3,
+    'PKR': 3,
+    'CNY': 6,
+    'CNH': 9,
+    'SEK': 3,
+    'SGD': 3,
+    'THB': 3,
+    'USD': 3,
+    'WON': 3,
+    'ZAR': 5
+
+}
+
+
+search_url = 'https://www.hkab.org.hk/ExchangeRateDisplayAction.do'
+headers = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+    'Accpet-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'zh-HK,zh-CN;q=0.9,zh;q=0.8,en;q=0.7',
+    'Cache-Control': 'max-age=0',
+    'Cookie': 'JSESSIONID=188E32A61F7E90EBCA010B00AC600C4A',
+    'Host': 'www.hkab.org.hk',
+    'Upgrade-Insecure-Requests': '1',
+
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
+    'Connection': 'keep-alive',
+    'Referer': 'https://www.google.com/',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'cross-site',
+    'Sec-Fetch-User': '?1'}
+
+
+resp = requests.get(search_url, headers=headers)
+# print(resp.text)
+
+
+date_range = [date.fromordinal(i) for i in range(start_date.toordinal(), end_date.toordinal())]
+date_input_list = []
+for i in date_range:
+    date_input_list.append(str(i))
+# print(date_list)
+
+
+
+def hkab_exr(currency, currency_value_index):
+    print(currency)
+    date_list = []
+    selling_list = []
+    buyingtt_list = []
+    buyingdd_list = []
+    for date in date_input_list:
+        year = date[:4]
+        month = date[5:7] 
+        if date[-2] == str(0):
+            day = date[-1]
+        else: day = date[-2:]
+        print(year, month, day)
+    
+
+        search_values = {
+            'name': 'ExchangeRateDisplayForm',
+            'method': 'post',
+            'rateYear': str(year),
+            'rateMonth': str(month),
+            'rateDay': str(day)
+        }
+        
+
+        data = urllib.parse.urlencode(search_values)
+        req = urllib.request.Request(search_url, data.encode('utf-8'), headers)
+        response = urllib.request.urlopen(req, timeout=60)
+        the_page = response.read().decode('utf-8')
+        # print(the_page)
+        
+        tree = etree.HTML(the_page)
+        table = tree.xpath('//table')
+        
+        
+        for i in table:
+            j = ''.join(i.xpath(".//td[1]//text()"))
+            # print('-----------------------------------------------------\n', 
+            #       table.index(i), j)
+            
+        exr_table = table[12]
+        exr_content = ''.join(exr_table.xpath(".//td[1]//text()")).split()
+        # print(exr_content)
+        
+        
+        if currency in exr_content:
+            
+            find_curr_index = exr_content.index(currency)
+            # print(find_curr_index)
+            selling = exr_content[int(find_curr_index+currency_value_index)]
+            buyingtt = exr_content[int(find_curr_index+int(currency_value_index+1))]
+            buyingdd = exr_content[int(find_curr_index+int(currency_value_index+2))]
+            date_list.append(date)
+            selling_list.append(selling)
+            buyingtt_list.append(buyingtt)
+            buyingdd_list.append(buyingdd)
+            print(selling, buyingtt, buyingdd)
+            
+        else:
+            date_list.append(date)
+            selling_list.append('n.a.')
+            buyingtt_list.append('n.a.')
+            buyingdd_list.append('n.a.')
+    
+    
+    df_CURR = pd.DataFrame(pd.to_numeric(selling_list, errors='coerce'), columns=[currency+'_selling'], index=date_list)
+    df_CURR[currency+'_buyingtt'] = pd.to_numeric(buyingtt_list, errors='coerce')
+    df_CURR[currency+'_buyingdd'] = pd.to_numeric(buyingdd_list, errors='coerce')
+    
+    # df_CURR.plot()
+    # plt.show()
+    # print(df_CURR)
+    
+    return df_CURR
+
+df_curr_all = pd.DataFrame()
+for i in currency_dict:
+    df_curr = hkab_exr(i,currency_dict[i])
+    df_curr_all = pd.concat([df_curr_all, df_curr], axis=1)
+print(df_curr_all)
+
+
+
+dir = os.path.split(os.path.realpath("hkab_all"))[0].replace("\\","/")
+df_curr_all.to_excel(dir+"/HKAB_exr_"+str(start_date)+'_to_'+str(end_date)+".xlsx", engine='xlsxwriter')
+
+
+
+
+    
